@@ -5,7 +5,6 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Media;
-using Avalonia.Media;
 using Avalonia.Skia;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -43,12 +42,11 @@ namespace tree_diagram_visualisation_test.Controls
         {
             Console.WriteLine($"MyControl created: {GetHashCode()}");
 
-           
+
         }
 
         private Node buildTree()
         {
-            Console.WriteLine("building tree!");
             if (TreeStructure == "one")
             {
                 Node t = new Node(13);
@@ -86,16 +84,20 @@ namespace tree_diagram_visualisation_test.Controls
             int width = (int)(this.Bounds.Width * 0.9); //maybe this 0.9 should be a slider for people with weird size screens
             int height = (int)(this.Bounds.Height * 0.9);
 
-            if(!treeDrawn)
+            if (!treeDrawn)
             {
                 tree = buildTree();
             }
 
 
-            this.tree.draw(width, height, context, this, !treeDrawn, flashCycleStep, 180); //bpm is hardcoded for now at 180
+            this.tree.draw(width, height, context, this, !treeDrawn, flashCycleStep); //bpm is hardcoded for now at 180
             flashCycleStep = -1; //-1 will mean dont change it
 
-           
+            if (!treeDrawn)
+            {
+                StartFlashingCycle(180);
+            }
+
             treeDrawn = true;
 
             //this.AttachedToVisualTree += OnAttachedToVisualTree;
@@ -106,7 +108,7 @@ namespace tree_diagram_visualisation_test.Controls
         {
             //when we resize the window we want to redraw
             base.OnPropertyChanged(change);
-            if(tree == null)
+            if (tree == null)
             {
                 return;
             }
@@ -114,10 +116,81 @@ namespace tree_diagram_visualisation_test.Controls
             {
                 treeDrawn = false;
                 flashCycleStep = tree.getCurrentFlashStep();
-                tree.StopFlashingCycle();
+                StopFlashingCycle();
                 tree = null;
                 InvalidateVisual();
             }
+        }
+
+
+
+        private CancellationTokenSource? _flashCts;
+
+        public void StartFlashingCycle(double bpm)
+        {
+
+            StopFlashingCycle(); // make sure we don't start twice
+            _flashCts = new CancellationTokenSource();
+            CancellationToken token = _flashCts.Token;
+
+            _ = FlashCycleAsync(token, bpm);
+        }
+        public void StopFlashingCycle()
+        {
+            if (_flashCts != null)
+            {
+                _flashCts.Cancel();
+                _flashCts.Dispose();
+                _flashCts = null;
+            }
+        }
+
+        private async Task FlashCycleAsync(CancellationToken token, double bpm)
+        {
+            List<Node> bottomRowNodes = tree.GetBottomRowNodes();
+            Console.WriteLine(bottomRowNodes.Count);
+            try
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(60.0 / bpm), token).ConfigureAwait(false); //bpm setter
+
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        //bottomRowNodes[tree.getCurrentFlashStep()].setColour(context, new Pen(Brushes.Red, 3));
+                        setBranchColour(bottomRowNodes[tree.getCurrentFlashStep()], new Pen(Brushes.Red, 3));
+                        Console.WriteLine("attempting a flash");
+
+                        InvalidateVisual();
+
+                        tree.setCurrentFlashStep((tree.getCurrentFlashStep() + 1) % bottomRowNodes.Count);
+                    }, DispatcherPriority.Normal);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // normal cancellation — do nothing
+            }
+        }
+
+
+        public void setBranchColour(Node node, Pen pen)
+        {
+            //only meant to be called on leaf nodes
+            Node parent = node.GetParent();
+            if (parent != node)
+            {
+                Point p = node.getThisPoint();
+                context.DrawLine(pen, p, parent.getThisPoint());
+                setBranchColour(parent, pen);
+
+                FormattedText formatted = new FormattedText(Convert.ToString(node.getValue()), CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 20, pen.Brush);
+                context.DrawEllipse(Brushes.White, pen, p, 12, 12);
+                context.DrawText(formatted, new Point(p.X - 5, p.Y - 15));
+
+
+            }
+
         }
 
     }
@@ -185,7 +258,7 @@ namespace tree_diagram_visualisation_test.Controls
 
         private int TotalRowValUp(int level)
         {
-            if(parent == this) //we are at the top level
+            if (parent == this) //we are at the top level
             {
                 return TotalRowValDown(level); //here level is how many levels we need to descend
             }
@@ -214,7 +287,7 @@ namespace tree_diagram_visualisation_test.Controls
 
         public int getDepthOfSubtree()  //assumes all branches have the same depth, which they should do
         {
-            if (children.Count == 0 )
+            if (children.Count == 0)
             {
                 return 0;
             }
@@ -223,12 +296,12 @@ namespace tree_diagram_visualisation_test.Controls
                 return children[0].getDepthOfSubtree() + 1;
             }
         }
-        public void draw(int _width, int _height, DrawingContext context, TreeDiagram container, bool firstRun, int flashCycleStep, double bpm)
+        public void draw(int _width, int _height, DrawingContext context, TreeDiagram container, bool firstRun, int flashCycleStep)
         {
             //to be called on the root node only
             width = _width;
             height = _height;
-            if(flashCycleStep != -1)
+            if (flashCycleStep != -1)
                 currentFlashStep = flashCycleStep;
 
             int startX = width / 2;
@@ -245,19 +318,13 @@ namespace tree_diagram_visualisation_test.Controls
             int endY = (int)(((double)1 / depth) * height);
             for (int i = 0; i < children.Count; i++)
             {
-                int endX = (int)( ((i + (int)(children.Count / 2.0)) / (children.Count + 1.0)) * width);
+                int endX = (int)(((i + (int)(children.Count / 2.0)) / (children.Count + 1.0)) * width);
                 Point e = new Point(endX, endY);
                 context.DrawLine(blackPen, s, e);
 
                 children[i].drawRecursive(context, width, height, depth, endX, endY, ref howfaralong);
                 children[i].setThisPoint(e);
                 howfaralong[getDepthOfSubtree()] += 1; //not convinced here tbh but seems to work, might want its own loop
-            }
-
-            if (firstRun)
-            {
-                Console.WriteLine("starting flash cycle");
-                StartFlashingCycle(container, bpm, context); //start flashing
             }
         }
 
@@ -268,7 +335,7 @@ namespace tree_diagram_visualisation_test.Controls
             //if howfaralong + subtreewidth > totalwidth then thats bad and we should throw an error
             if (children.Count >= 1)
             {
-                int sectionsize = (int)((width) / (children[0].GetTotalRowSize())); 
+                int sectionsize = (int)((width) / (children[0].GetTotalRowSize()));
 
                 int endY = (int)(((depth - getDepthOfSubtree() + 1.0) / depth) * height);
                 for (int i = 0; i < children.Count; i++)
@@ -297,19 +364,19 @@ namespace tree_diagram_visualisation_test.Controls
             thisPoint = point;
         }
 
-        private Point getThisPoint()
+        public Point getThisPoint()
         {
             return thisPoint;
         }
 
-        public void setColour(DrawingContext context, Pen pen, TreeDiagram inst)
+        public void setColour(DrawingContext context, Pen pen)
         {
             //only meant to be called on leaf nodes
-            if(parent != this)
+            if (parent != this)
             {
                 Point p = getThisPoint();
                 context.DrawLine(pen, p, parent.getThisPoint());
-                parent.setColour(context, pen, inst);
+                parent.setColour(context, pen);
 
                 FormattedText formatted = new FormattedText(Convert.ToString(value), CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 20, pen.Brush);
                 context.DrawEllipse(Brushes.White, pen, p, 12, 12);
@@ -319,7 +386,7 @@ namespace tree_diagram_visualisation_test.Controls
             }
 
         }
-        private List<Node> GetBottomRowNodes()
+        public List<Node> GetBottomRowNodes()
         {
             List<Node> bottomRowNodes = new List<Node>();
             GetBottomRowNodesRecursive(this, bottomRowNodes);
@@ -340,57 +407,14 @@ namespace tree_diagram_visualisation_test.Controls
             }
         }
 
-        private CancellationTokenSource? _flashCts;
-
-        public void StartFlashingCycle(TreeDiagram inst, double bpm, DrawingContext context)
-        {
-            StopFlashingCycle(); // make sure we don't start twice
-            _flashCts = new CancellationTokenSource();
-            CancellationToken token = _flashCts.Token;
-
-            _ = FlashCycleAsync(token, inst, bpm, context);
-        }
-        public void StopFlashingCycle()
-        {
-            if (_flashCts != null)
-            {
-                _flashCts.Cancel();
-                _flashCts.Dispose();
-                _flashCts = null;
-            }
-        }
-
         public int getCurrentFlashStep()
         {
             return currentFlashStep;
         }
-        private async Task FlashCycleAsync(CancellationToken token, TreeDiagram inst, double bpm, DrawingContext context)
+
+        public void setCurrentFlashStep(int flashStep)
         {
-            List<Node> bottomRowNodes = GetBottomRowNodes();
-            Console.WriteLine(bottomRowNodes.Count);
-            try
-            {
-                while (!token.IsCancellationRequested)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(60.0/bpm), token).ConfigureAwait(false); //bpm setter
-
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        bottomRowNodes[currentFlashStep].setColour(context, new Pen(Brushes.Red, 3), inst);
-
-
-                        inst.InvalidateVisual();
-
-                        currentFlashStep = (currentFlashStep + 1) % bottomRowNodes.Count;
-
-                    }, DispatcherPriority.Normal);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // normal cancellation — do nothing
-            }
+            currentFlashStep = flashStep;
         }
-
     }
 }
