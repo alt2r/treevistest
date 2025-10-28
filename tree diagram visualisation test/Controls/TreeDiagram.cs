@@ -1,21 +1,22 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Platform;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media;
 using Avalonia.Skia;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Globalization;
 using System.Text.RegularExpressions;
-using Avalonia.VisualTree;
 using System.Threading;
 using System.Threading.Tasks;
-using System.ComponentModel;
 
 
 namespace tree_diagram_visualisation_test.Controls
@@ -23,11 +24,56 @@ namespace tree_diagram_visualisation_test.Controls
     public class TreeDiagram : Control
     {
         DrawingContext context;
-        List<Node> trees = new List<Node>();
+        Node tree;
         private bool treeDrawn = false;
-        private List<int> flashCycleSteps = new List<int>();
+        private int flashCycleStep;
+        //private int activeTrees = 0;
+
+        public static readonly StyledProperty<string> TreeStructureProperty =
+           AvaloniaProperty.Register<TreeDiagram, string>(nameof(TreeStructure));
+
+        public string TreeStructure
+        {
+            get => GetValue(TreeStructureProperty);
+            set => SetValue(TreeStructureProperty, value);
+        }
+
+
         public TreeDiagram()
         {
+            Console.WriteLine($"MyControl created: {GetHashCode()}");
+
+           
+        }
+
+        private Node buildTree()
+        {
+            Console.WriteLine("building tree!");
+            if (TreeStructure == "one")
+            {
+                Node t = new Node(13);
+                t.AddChildren(new Node(7), new Node(6));
+                t.GetChildAt(0).AddChildren(new Node(3), new Node(4));
+                t.GetChildAt(1).AddChildren(new Node(3), new Node(3));
+                t.GetChildAt(0).GetChildAt(0).AddChildren(new Node(1), new Node(1), new Node(1));
+                t.GetChildAt(0).GetChildAt(1).AddChildren(new Node(1), new Node(1), new Node(1), new Node(1));
+                t.GetChildAt(1).GetChildAt(0).AddChildren(new Node(1), new Node(1), new Node(1));
+                t.GetChildAt(1).GetChildAt(1).AddChildren(new Node(1), new Node(1), new Node(1));
+                return t;
+            }
+            if (TreeStructure == "two")
+            {
+                Node t = new Node(12);
+                t.AddChildren(new Node(7), new Node(5));
+                t.GetChildAt(0).AddChildren(new Node(3), new Node(4));
+                t.GetChildAt(1).AddChildren(new Node(2), new Node(3));
+                t.GetChildAt(0).GetChildAt(0).AddChildren(new Node(1), new Node(1), new Node(1));
+                t.GetChildAt(0).GetChildAt(1).AddChildren(new Node(1), new Node(1), new Node(1), new Node(1));
+                t.GetChildAt(1).GetChildAt(0).AddChildren(new Node(1), new Node(1));
+                t.GetChildAt(1).GetChildAt(1).AddChildren(new Node(1), new Node(1), new Node(1));
+                return t;
+            }
+            return null;
 
         }
         public override void Render(DrawingContext _context)
@@ -37,33 +83,20 @@ namespace tree_diagram_visualisation_test.Controls
             base.Render(context);
 
 
-            int width = (int)(this.Bounds.Width * 0.9);
+            int width = (int)(this.Bounds.Width * 0.9); //maybe this 0.9 should be a slider for people with weird size screens
             int height = (int)(this.Bounds.Height * 0.9);
 
-            Node tree = new Node(13);
-            tree.AddChildren(new Node(7), new Node(6));
-            tree.GetChildAt(0).AddChildren(new Node(3), new Node(4));
-            tree.GetChildAt(1).AddChildren(new Node(3), new Node(3));
-            tree.GetChildAt(0).GetChildAt(0).AddChildren(new Node(1), new Node(1), new Node(1));
-            tree.GetChildAt(0).GetChildAt(1).AddChildren(new Node(1), new Node(1), new Node(1), new Node(1));
-            tree.GetChildAt(1).GetChildAt(0).AddChildren(new Node(1), new Node(1), new Node(1));
-            tree.GetChildAt(1).GetChildAt(1).AddChildren(new Node(1), new Node(1), new Node(1));
-
-            //Console.WriteLine(tree.GetChildAt(1).GetChildAt(0).GetChildAt(0).GetTotalRowSize());
-            if (flashCycleSteps.Count > 0)
-                tree.draw(width, height, context, this, !treeDrawn, flashCycleSteps[0], 180);
-            else
+            if(!treeDrawn)
             {
-                tree.draw(width, height, context, this, !treeDrawn, 0, 180);
+                tree = buildTree();
             }
-            flashCycleSteps.Clear();
-            flashCycleSteps.Add(-1); //-1 will mean dont change it
 
-            
-            trees.Add(tree);
+
+            this.tree.draw(width, height, context, this, !treeDrawn, flashCycleStep, 180); //bpm is hardcoded for now at 180
+            flashCycleStep = -1; //-1 will mean dont change it
+
+           
             treeDrawn = true;
-
-
 
             //this.AttachedToVisualTree += OnAttachedToVisualTree;
             //this.DetachedFromVisualTree += OnDetachedFromVisualTree;
@@ -71,18 +104,18 @@ namespace tree_diagram_visualisation_test.Controls
         }
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
         {
+            //when we resize the window we want to redraw
             base.OnPropertyChanged(change);
+            if(tree == null)
+            {
+                return;
+            }
             if (change.Property == BoundsProperty)
             {
                 treeDrawn = false;
-                flashCycleSteps.Clear();
-                foreach (Node t in trees)
-                {
-                    flashCycleSteps.Add(t.getCurrentFlashStep());
-                    t.StopFlashingCycle();
-
-                }
-                trees.Clear();
+                flashCycleStep = tree.getCurrentFlashStep();
+                tree.StopFlashingCycle();
+                tree = null;
                 InvalidateVisual();
             }
         }
@@ -96,7 +129,6 @@ namespace tree_diagram_visualisation_test.Controls
         private int value;
         Pen blackPen;
         private Point thisPoint = new Point();
-        private DrawingContext context = null;
         private int width, height;
         private int currentFlashStep = 0;
         public Node(int _value)
@@ -191,10 +223,9 @@ namespace tree_diagram_visualisation_test.Controls
                 return children[0].getDepthOfSubtree() + 1;
             }
         }
-        public void draw(int _width, int _height, DrawingContext _context, TreeDiagram container, bool firstRun, int flashCycleStep, double bpm)
+        public void draw(int _width, int _height, DrawingContext context, TreeDiagram container, bool firstRun, int flashCycleStep, double bpm)
         {
             //to be called on the root node only
-            context = _context;
             width = _width;
             height = _height;
             if(flashCycleStep != -1)
@@ -226,13 +257,13 @@ namespace tree_diagram_visualisation_test.Controls
             if (firstRun)
             {
                 Console.WriteLine("starting flash cycle");
-                StartFlashingCycle(container, bpm); //start flashing
+                StartFlashingCycle(container, bpm, context); //start flashing
             }
         }
 
         //for a row with totalwidth, this node is subtreewidth wide, and is howfaralong in the row
         //so we want to draw the nodes between howfaralong and howfaralong + subtreewidth
-        public void drawRecursive(DrawingContext _context, int width, int height, int depth, int startX, int startY, ref int[] howfaralong)
+        public void drawRecursive(DrawingContext context, int width, int height, int depth, int startX, int startY, ref int[] howfaralong)
         {
             //if howfaralong + subtreewidth > totalwidth then thats bad and we should throw an error
             if (children.Count >= 1)
@@ -245,9 +276,9 @@ namespace tree_diagram_visualisation_test.Controls
                     int endX = (int)((i + howfaralong[getDepthOfSubtree()] + 0.5) * sectionsize);
                     Point s = new Point(startX, startY);
                     Point e = new Point(endX, endY);
-                    _context.DrawLine(blackPen, s, e);
+                    context.DrawLine(blackPen, s, e);
 
-                    children[i].drawRecursive(_context, width, height, depth, endX, endY, ref howfaralong);
+                    children[i].drawRecursive(context, width, height, depth, endX, endY, ref howfaralong);
                     children[i].setThisPoint(e);
 
                 }
@@ -257,8 +288,8 @@ namespace tree_diagram_visualisation_test.Controls
                 }
             }
             FormattedText formatted = new FormattedText(Convert.ToString(value), CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 20, Brushes.Black);
-            _context.DrawEllipse(Brushes.White, blackPen, new Point(startX, startY), 12, 12);
-            _context.DrawText(formatted, new Point(startX - 5, startY - 15));
+            context.DrawEllipse(Brushes.White, blackPen, new Point(startX, startY), 12, 12);
+            context.DrawText(formatted, new Point(startX - 5, startY - 15));
         }
 
         private void setThisPoint(Point point)
@@ -311,13 +342,13 @@ namespace tree_diagram_visualisation_test.Controls
 
         private CancellationTokenSource? _flashCts;
 
-        public void StartFlashingCycle(TreeDiagram inst, double bpm)
+        public void StartFlashingCycle(TreeDiagram inst, double bpm, DrawingContext context)
         {
             StopFlashingCycle(); // make sure we don't start twice
             _flashCts = new CancellationTokenSource();
             CancellationToken token = _flashCts.Token;
 
-            _ = FlashCycleAsync(token, inst, bpm);
+            _ = FlashCycleAsync(token, inst, bpm, context);
         }
         public void StopFlashingCycle()
         {
@@ -333,9 +364,10 @@ namespace tree_diagram_visualisation_test.Controls
         {
             return currentFlashStep;
         }
-        private async Task FlashCycleAsync(CancellationToken token, TreeDiagram inst, double bpm)
+        private async Task FlashCycleAsync(CancellationToken token, TreeDiagram inst, double bpm, DrawingContext context)
         {
             List<Node> bottomRowNodes = GetBottomRowNodes();
+            Console.WriteLine(bottomRowNodes.Count);
             try
             {
                 while (!token.IsCancellationRequested)
@@ -350,6 +382,7 @@ namespace tree_diagram_visualisation_test.Controls
                         inst.InvalidateVisual();
 
                         currentFlashStep = (currentFlashStep + 1) % bottomRowNodes.Count;
+
                     }, DispatcherPriority.Normal);
                 }
             }

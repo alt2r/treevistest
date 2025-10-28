@@ -25,8 +25,8 @@
 		</Grid.ColumnDefinitions>
 		
 		<TextBlock Text="{Binding Greeting}" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="Black" Grid.Column="0"/>
-		<controls:TreeDiagram Grid.Column="1"/>
-		<controls:TreeDiagram Grid.Column="2"/>
+		<controls:TreeDiagram Grid.Column="1" TreeStructure="one"/>
+		<controls:TreeDiagram Grid.Column="2" TreeStructure="two"/> 
 	</Grid>
 
 </Window>
